@@ -1,37 +1,24 @@
 FROM php:8.4-apache
 
 RUN apt-get update && apt-get install -y \
-    libzip-dev \
-    zip \
-    unzip \
-    git \
-    curl \
-    libpng-dev \
-    libonig-dev \
-    libxml2-dev \
-    && docker-php-ext-install pdo_mysql mbstring zip exif pcntl bcmath gd
+    libzip-dev zip unzip git curl libpng-dev libonig-dev libxml2-dev sqlite3 libsqlite3-dev \
+    && docker-php-ext-install pdo_mysql mbstring zip exif pcntl bcmath gd pdo_sqlite
 
-# Install SQLite3 support
-RUN apt-get install -y sqlite3 libsqlite3-dev \
-    && docker-php-ext-install pdo_sqlite
-
-# Enable Apache mod_rewrite
 RUN a2enmod rewrite
 
-# Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Set working directory
 WORKDIR /var/www/html
 
-# Copy application files
 COPY . .
 
-# Install PHP dependencies (allow platform override temporarily)
-RUN composer install --no-dev --optimize-autoloader --ignore-platform-req=ext-gd --ignore-platform-req=ext-zip || true
+# Create database file and set permissions
+RUN mkdir -p database \
+    && touch database/database.sqlite \
+    && chmod 777 database database/database.sqlite
 
-# Alternative: If the above fails, use this instead:
-# RUN composer install --no-dev --optimize-autoloader --ignore-platform-req=ext-gd --ignore-platform-req=ext-zip
+# Install PHP dependencies
+RUN composer install --no-dev --optimize-autoloader
 
 # Install Node.js and build assets
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
@@ -39,11 +26,13 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && npm install \
     && npm run build
 
-# Set permissions
-RUN chown -R www-data:www-data storage bootstrap/cache \
-    && chmod -R 775 storage bootstrap/cache
+# Run migrations during build (creates tables)
+RUN php artisan migrate --force
 
-# Configure Apache to serve from public directory
+# Set permissions
+RUN chown -R www-data:www-data storage bootstrap/cache database \
+    && chmod -R 775 storage bootstrap/cache database
+
 RUN sed -i 's!/var/www/html!/var/www/html/public!g' /etc/apache2/sites-available/000-default.conf
 
 EXPOSE 80
