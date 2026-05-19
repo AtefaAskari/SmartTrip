@@ -10,12 +10,10 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
-COPY . .
+# Create the SQLite database file
+RUN mkdir -p database && touch database/database.sqlite && chmod 777 database database/database.sqlite
 
-# Create database file and set permissions
-RUN mkdir -p database \
-    && touch database/database.sqlite \
-    && chmod 777 database database/database.sqlite
+COPY . .
 
 # Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader
@@ -26,7 +24,8 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && npm install \
     && npm run build
 
-# Run migrations during build (creates tables)
+# Generate key and run migrations during build
+RUN php artisan key:generate --force
 RUN php artisan migrate --force
 
 # Set permissions
